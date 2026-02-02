@@ -1,19 +1,7 @@
-"""
-Flight Price Data Pipeline DAG
-==============================
-End-to-end data pipeline for processing Bangladesh flight price data.
-
-Pipeline Stages:
-1. Ingest CSV data into MySQL staging
-2. Validate data quality
-3. Transform and clean data
-4. Compute KPIs
-5. Load to PostgreSQL analytics
-"""
-
 from datetime import datetime, timedelta
 from airflow import DAG
 from airflow.operators.python import PythonOperator
+from airflow.utils.task_group import TaskGroup
 import logging
 
 # Import functions from modules
@@ -32,58 +20,125 @@ default_args = {
     'depends_on_past': False,
     'email_on_failure': True,
     'email_on_retry': True,
-    'email': 'your-email@example.com',  # Replace with actual email
-    'retries': 3,  # Increased retries
+    'email': ['data-team@example.com'],  # Configure via Airflow Variables
+    'retries': 3,
     'retry_delay': timedelta(minutes=5),
+    'execution_timeout': timedelta(hours=1),
 }
 
-# ========================================
-# DAG Definition
-# ========================================
+# DAG Definition with TaskGroups
+
 with DAG(
     dag_id='flight_price_pipeline',
     default_args=default_args,
     description='End-to-end data pipeline for Bangladesh flight price analysis',
-    schedule_interval=None,  # Manual trigger only
+    schedule_interval='@daily', 
     start_date=datetime(2024, 1, 1),
     catchup=False,
     tags=['flight', 'price', 'bangladesh', 'etl'],
+    doc_md="""
+    ## Flight Price Data Pipeline
+    
+    This pipeline processes Bangladesh flight price data through the following stages:
+    
+    1. **Ingestion**: Load CSV data into MySQL staging (idempotent, with hash-based change detection)
+    2. **Quality**: Validate data quality using the data quality framework
+    3. **Transform**: Clean and enrich data, load to PostgreSQL
+    4. **Analytics**: Compute KPIs using SQL pushdown
+    5. **Reporting**: Save validation and quality reports
+    
+    ### Parameters
+    - `force_reload`: Set to `true` to force re-ingestion even if file unchanged
+    
+    ### Lineage
+    All tasks track data lineage for auditing and debugging.
+    """,
+    params={
+        'force_reload': False,
+    },
 ) as dag:
     
-    # Task 1: Ingest CSV to MySQL
-    ingest_task = PythonOperator(
-        task_id='ingest_csv_to_mysql',
-        python_callable=ingest_csv_to_mysql,  # Keep name for now
-        provide_context=True,
-    )
+    # TaskGroup: Data Ingestion
+   
+    with TaskGroup(group_id='ingestion', tooltip='Load raw data into staging') as ingestion_group:
+        ingest_task = PythonOperator(
+            task_id='ingest_csv_to_mysql',
+            python_callable=ingest_csv_to_mysql,
+            provide_context=True,
+            doc_md="""
+            ### Ingest CSV to MySQL
+            - Loads raw CSV data into MySQL staging table
+            - Supports chunked reading for memory efficiency
+            - Implements idempotency via file hash comparison
+            - Detects schema evolution
+            """
+        )
     
-    # Task 2: Validate Data
-    validate_task = PythonOperator(
-        task_id='validate_data',
-        python_callable=validate_data,
-        provide_context=True,
-    )
     
-    # Task 3: Transform Data
-    transform_task = PythonOperator(
-        task_id='transform_data',
-        python_callable=transform_data,
-        provide_context=True,
-    )
+    # TaskGroup: Data Quality
+   
+    with TaskGroup(group_id='quality', tooltip='Validate and report on data quality') as quality_group:
+        validate_task = PythonOperator(
+            task_id='validate_data',
+            python_callable=validate_data,
+            provide_context=True,
+            doc_md="""
+            ### Validate Data
+            - Uses DataQualityValidator framework
+            - Checks for nulls, negative values, type errors
+            - Auto-corrects fixable issues
+            - Recalculates Total Fare if mismatched
+            """
+        )
+        
+        report_task = PythonOperator(
+            task_id='save_validation_report',
+            python_callable=save_validation_report,
+            provide_context=True,
+            doc_md="""
+            ### Save Validation Report
+            - Persists validation results to PostgreSQL
+            - Creates audit trail for each pipeline run
+            """
+        )
+        
+        validate_task >> report_task
     
-    # Task 4: Compute KPIs
-    kpi_task = PythonOperator(
-        task_id='compute_kpis',
-        python_callable=compute_kpis,
-        provide_context=True,
-    )
+   
+    # TaskGroup: Transformation & Loading
+  
+    with TaskGroup(group_id='transformation', tooltip='Transform and load to analytics') as transform_group:
+        transform_task = PythonOperator(
+            task_id='transform_data',
+            python_callable=transform_data,
+            provide_context=True,
+            doc_md="""
+            ### Transform Data
+            - Parses datetime fields
+            - Adds peak season flags
+            - Creates route column
+            - Loads to PostgreSQL analytics
+            """
+        )
     
-    # Task 5: Save Validation Report
-    report_task = PythonOperator(
-        task_id='save_validation_report',
-        python_callable=save_validation_report,
-        provide_context=True,
-    )
+   
+    # TaskGroup: Analytics & KPIs
     
-    # Define task dependencies
-    ingest_task >> validate_task >> transform_task >> kpi_task >> report_task
+    with TaskGroup(group_id='analytics', tooltip='Compute KPI metrics') as analytics_group:
+        kpi_task = PythonOperator(
+            task_id='compute_kpis',
+            python_callable=compute_kpis,
+            provide_context=True,
+            doc_md="""
+            ### Compute KPIs
+            Uses SQL pushdown for performance:
+            - Average Fare by Airline
+            - Seasonal Fare Variation
+            - Booking Count by Airline
+            - Most Popular Routes
+            """
+        )
+   
+    # Define Task Dependencies
+ 
+    ingestion_group >> quality_group >> transform_group >> analytics_group

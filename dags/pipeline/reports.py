@@ -11,9 +11,9 @@ logger = logging.getLogger(__name__)
 
 
 def save_validation_report(**context):
-    """
-    Task 5: Save validation report to PostgreSQL.
-    """
+    
+    # Task 5: Save validation report to PostgreSQL.
+    
     logger.info("Saving validation report...")
     
     postgres_engine = get_postgres_connection()
