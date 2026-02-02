@@ -23,6 +23,8 @@ End-to-end Apache Airflow pipeline for processing and analyzing Bangladesh fligh
 ```mermaid
 erDiagram
     flight_staging {
+        varchar source_file
+        varchar file_hash
         int id PK
         varchar airline
         varchar source
@@ -133,7 +135,19 @@ erDiagram
     flight_data_transformed ||--o{ kpi_booking_count_by_airline : "aggregates"
     flight_data_transformed ||--o{ kpi_popular_routes : "aggregates"
     flight_staging ||--o{ validation_report : "generates"
+    pipeline_run_status {
+        int id PK
+        varchar run_id
+        timestamp execution_date
+        varchar overall_status
+        json succeeded_tasks
+        json failed_tasks
+        json skipped_tasks
+        timestamp created_at
+    }
+
     ingestion_metadata ||--o{ flight_staging : "tracks"
+    flight_price_pipeline ||--o{ pipeline_run_status : "generates"
 ```
 
 ### Pipeline Flow Diagram
@@ -161,6 +175,10 @@ flowchart LR
         E[Compute KPIs]
     end
 
+    subgraph Status
+        F[Pipeline Status Report]
+    end
+
     subgraph MySQL
         S[(flight_staging)]
     end
@@ -172,6 +190,7 @@ flowchart LR
         K3[(kpi_booking_count_by_airline)]
         K4[(kpi_popular_routes)]
         V[(validation_report)]
+        PS[(pipeline_run_status)]
     end
 
     CSV --> A
@@ -186,6 +205,8 @@ flowchart LR
     E --> K2
     E --> K3
     E --> K4
+    E --> F
+    F --> PS
 ```
 
 ---
@@ -194,12 +215,15 @@ flowchart LR
 
 - Data Quality Framework: Structured validation similar to Great Expectations
 - Idempotent Ingestion: Hash-based change detection to skip unchanged files
+- Multi-File Support: Append strategy preserves data from multiple CSV sources
 - Schema Evolution: Automatic detection and handling of schema changes
 - SQL Pushdown: KPI computation pushed to database for performance
 - Lineage Tracking: Full data lineage from source to KPIs
 - Configuration Management: Centralized config via Airflow Variables or environment
 - Connection Pooling: Optimized database connections with configurable pool settings
 - TaskGroups: Organized DAG structure for better visualization
+- Failure Resilience: Trigger rules ensure quality tasks run even if upstream fails
+- Pipeline Status Reports: Automatic status summary and alerting at end of each run
 
 ---
 
@@ -283,6 +307,8 @@ The pipeline processes flight price data through four TaskGroups:
 - Loads CSV into MySQL staging table
 - Chunked reading (10,000 rows) for memory efficiency
 - Idempotent: skips if file unchanged (hash-based detection)
+- **Append Strategy**: Preserves data from multiple source files
+- Source file tracking: Each row tagged with `source_file` and `file_hash`
 - Detects schema evolution in source data
 
 ### Quality TaskGroup
@@ -304,6 +330,14 @@ The pipeline processes flight price data through four TaskGroups:
 
 - Computes KPIs using SQL pushdown for performance
 - Four KPI tables populated in a single task
+
+### Pipeline Status Report
+
+- Runs at the end of every pipeline execution
+- Uses `TriggerRule.ALL_DONE` to run regardless of upstream failures
+- Summarizes all task statuses (succeeded, failed, skipped)
+- Logs status report and saves to `pipeline_run_status` table
+- Enables alerting and monitoring integration
 
 ---
 

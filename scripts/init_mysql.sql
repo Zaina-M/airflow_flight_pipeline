@@ -29,6 +29,9 @@ CREATE TABLE flight_staging (
     is_validated BOOLEAN DEFAULT FALSE,
     validation_errors TEXT,
     validated_at TIMESTAMP NULL,
+    -- Source file tracking (for multi-file ingestion)
+    source_file VARCHAR(255),
+    file_hash VARCHAR(64),
     -- Ingestion metadata
     ingestion_run_id VARCHAR(255),
     ingested_at TIMESTAMP,
@@ -40,6 +43,7 @@ CREATE TABLE flight_staging (
 CREATE INDEX idx_airline ON flight_staging(airline);
 CREATE INDEX idx_source_dest ON flight_staging(source, destination);
 CREATE INDEX idx_seasonality ON flight_staging(seasonality);
+CREATE INDEX idx_source_file ON flight_staging(source_file);
 
 -- Grant permissions
 GRANT ALL PRIVILEGES ON staging.* TO 'airflow'@'%';

@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 from airflow.utils.task_group import TaskGroup
+from airflow.utils.trigger_rule import TriggerRule
 import logging
 
 # Import functions from modules
@@ -9,7 +10,7 @@ from pipeline.ingestion import ingest_csv_to_mysql
 from pipeline.validation import validate_data
 from pipeline.transformation import transform_data
 from pipeline.kpis import compute_kpis
-from pipeline.reports import save_validation_report
+from pipeline.reports import save_validation_report, send_pipeline_status
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -53,9 +54,9 @@ with DAG(
     ### Lineage
     All tasks track data lineage for auditing and debugging.
     """,
-    params={
-        'force_reload': False,
-    },
+    # params={
+    #     'force_reload': False,
+    # },
 ) as dag:
     
     # TaskGroup: Data Ingestion
@@ -75,13 +76,14 @@ with DAG(
         )
     
     
-    # TaskGroup: Data Quality
+    # TaskGroup: Data Quality - continues even if ingestion fails
    
     with TaskGroup(group_id='quality', tooltip='Validate and report on data quality') as quality_group:
         validate_task = PythonOperator(
             task_id='validate_data',
             python_callable=validate_data,
             provide_context=True,
+            trigger_rule=TriggerRule.ALL_DONE,  # Run even if upstream failed
             doc_md="""
             ### Validate Data
             - Uses DataQualityValidator framework
@@ -95,6 +97,7 @@ with DAG(
             task_id='save_validation_report',
             python_callable=save_validation_report,
             provide_context=True,
+            trigger_rule=TriggerRule.ALL_DONE,  # Run even if validation failed
             doc_md="""
             ### Save Validation Report
             - Persists validation results to PostgreSQL
@@ -139,6 +142,20 @@ with DAG(
             """
         )
    
-    # Define Task Dependencies
+    # Define Task Dependencies with Status Report
  
-    ingestion_group >> quality_group >> transform_group >> analytics_group
+    # Status report task - always runs to send summary
+    pipeline_status = PythonOperator(
+        task_id='pipeline_status_report',
+        python_callable=send_pipeline_status,
+        provide_context=True,
+        trigger_rule=TriggerRule.ALL_DONE,  # Always runs regardless of upstream status
+        doc_md="""
+        ### Pipeline Status Report
+        - Summarizes all task statuses
+        - Alerts on any failures
+        - Always runs (even if other tasks fail)
+        """
+    )
+    
+    ingestion_group >> quality_group >> transform_group >> analytics_group >> pipeline_status

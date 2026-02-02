@@ -54,12 +54,15 @@ graph TD
 
 ## 2. DAG Task Descriptions
 
-The `flight_price_pipeline` DAG consists of five primary tasks:
+The `flight_price_pipeline` DAG consists of six primary tasks:
 
 ### Task 1: `ingest_csv_to_mysql`
 
 - **Goal**: Load raw data from the CSV file into a MySQL staging area.
 - **Logic**: Uses Pandas chunked reading (10,000 rows/chunk) for memory efficiency. Column names are mapped from CSV headers to database-friendly snake_case.
+- **Append Strategy**: Instead of truncating all data, removes only rows from the same source file before inserting. This preserves data from multiple CSV files.
+- **Source Tracking**: Each row is tagged with `source_file` (filename) and `file_hash` (MD5 hash) for traceability.
+- **Idempotency**: Skips ingestion if the file hash matches the last ingestion for that specific source file.
 - **Target**: MySQL `flight_staging` table.
 
 ### Task 2: `validate_data`
@@ -91,7 +94,19 @@ The `flight_price_pipeline` DAG consists of five primary tasks:
 ### Task 5: `save_validation_report`
 
 - **Goal**: Audit trail of data quality for every pipeline run.
+- **Trigger Rule**: Uses `ALL_DONE` to run even if validation task fails.
 - **Target**: PostgreSQL `validation_report`.
+
+### Task 6: `pipeline_status_report`
+
+- **Goal**: Summarize pipeline execution status and enable alerting.
+- **Logic**: Collects all task instance states from the current DAG run, categorizes as succeeded/failed/skipped.
+- **Trigger Rule**: Uses `ALL_DONE` to always run, regardless of upstream task status.
+- **Outputs**:
+  - Logs a summary report to Airflow logs
+  - Saves status to PostgreSQL `pipeline_run_status` table
+  - Returns structured status dict for downstream integrations
+- **Target**: PostgreSQL `pipeline_run_status`.
 
 ---
 
@@ -133,10 +148,30 @@ Identifies high-traffic corridors.
 | **Missing Infrastructure**         | Initially lacked a MySQL staging service in the Docker setup. Added a dedicated `mysql:8.0` service with proper health checks and initialization scripts.                                                |
 | **Undefined Connections**          | Airflow tasks failed due to missing `mysql_staging` connection. Resolved by defining connections directly via `AIRFLOW_CONN_*` environment variables in `docker-compose.yml` for automated setup.        |
 | **Data Mismatch**                  | CSV column headers contained spaces and special characters. Implemented a robust `COLUMN_MAPPING` utility to standardize names across the pipeline.                                                      |
+| **Data Loss on Multi-File**        | Original TRUNCATE strategy deleted all data when loading new files. Switched to append strategy with source file tracking—only removes rows from the same source before inserting.                      |
+| **Pipeline Breaking on Failure**   | Single task failure caused entire pipeline to halt. Implemented `TriggerRule.ALL_DONE` on quality and status tasks to ensure reporting continues even when upstream fails.                               |
 
 ---
 
-## 5. Execution Flow
+## 5. Failure Resilience
+
+The pipeline uses Airflow trigger rules to ensure critical tasks run even when upstream tasks fail:
+
+| Task                      | Trigger Rule | Behavior                                      |
+| :------------------------ | :----------- | :-------------------------------------------- |
+| `validate_data`           | `ALL_DONE`   | Runs even if ingestion fails                  |
+| `save_validation_report`  | `ALL_DONE`   | Runs even if validation fails                 |
+| `pipeline_status_report`  | `ALL_DONE`   | Always runs to report final status            |
+| All other tasks           | `ALL_SUCCESS`| Default—only runs if upstream succeeded       |
+
+This ensures:
+- Validation reports are always saved for debugging
+- Pipeline status is always reported for alerting
+- Failed runs still produce actionable diagnostics
+
+---
+
+## 6. Execution Flow
 
 ```mermaid
 stateDiagram-v2

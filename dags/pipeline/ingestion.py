@@ -21,37 +21,45 @@ def compute_file_hash(file_path: str) -> str:
     return hash_md5.hexdigest()
 
 
-def get_last_ingestion_hash(engine) -> str:
-    # Get the hash of the last ingested file.
+def get_last_ingestion_hash(engine, file_name: str = None) -> str:
+    # Get the hash of the last ingested file (optionally filtered by file name).
     try:
         with engine.connect() as conn:
-            result = conn.execute(text(
-                "SELECT file_hash FROM ingestion_metadata ORDER BY ingested_at DESC LIMIT 1"
-            ))
+            if file_name:
+                result = conn.execute(text(
+                    "SELECT file_hash FROM ingestion_metadata WHERE file_name = :file_name ORDER BY ingested_at DESC LIMIT 1"
+                ), {"file_name": file_name})
+            else:
+                result = conn.execute(text(
+                    "SELECT file_hash FROM ingestion_metadata ORDER BY ingested_at DESC LIMIT 1"
+                ))
             row = result.fetchone()
             return row[0] if row else None
     except Exception:
         return None
 
 
-def record_ingestion_metadata(engine, file_hash: str, record_count: int, run_id: str):
+def record_ingestion_metadata(engine, file_hash: str, record_count: int, run_id: str, file_name: str = None):
     # Record metadata about the ingestion run.
     try:
         with engine.begin() as conn:
-            # Create metadata table if not exists
+            # Create metadata table if not exists (with file_name column)
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS ingestion_metadata (
                     id INT AUTO_INCREMENT PRIMARY KEY,
+                    file_name VARCHAR(255),
                     file_hash VARCHAR(64),
                     record_count INT,
                     run_id VARCHAR(255),
-                    ingested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    ingested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    INDEX idx_file_name (file_name),
+                    INDEX idx_file_hash (file_hash)
                 )
             """))
             conn.execute(text("""
-                INSERT INTO ingestion_metadata (file_hash, record_count, run_id)
-                VALUES (:hash, :count, :run_id)
-            """), {"hash": file_hash, "count": record_count, "run_id": run_id})
+                INSERT INTO ingestion_metadata (file_name, file_hash, record_count, run_id)
+                VALUES (:file_name, :hash, :count, :run_id)
+            """), {"file_name": file_name, "hash": file_hash, "count": record_count, "run_id": run_id})
     except Exception as e:
         logger.warning(f"Could not record ingestion metadata: {e}")
 
@@ -74,18 +82,9 @@ def ingest_csv_to_mysql(**context):
         engine = get_mysql_connection()
         
      
-        # Idempotency Check: Compare file hash
-       
+        # Compute file hash for idempotency check
         current_hash = compute_file_hash(CSV_FILE_PATH)
-        last_hash = get_last_ingestion_hash(engine)
-        
         force_reload = context.get('params', {}).get('force_reload', False)
-        
-        if current_hash == last_hash and not force_reload:
-            logger.info("File unchanged since last ingestion, skipping...")
-            context['ti'].xcom_push(key='ingestion_skipped', value=True)
-            context['ti'].xcom_push(key='ingested_count', value=0)
-            return {'status': 'skipped', 'reason': 'file_unchanged', 'file_hash': current_hash}
         
      
         # Schema Evolution Detection
@@ -105,14 +104,25 @@ def ingest_csv_to_mysql(**context):
                 raise ValueError(f"Breaking schema changes detected: {schema_report.removed_columns}")
         
       
-        # Chunked Ingestion with UPSERT Logic
+        # Chunked Ingestion with APPEND Strategy (preserves data from other files)
         chunk_size = int(os.environ.get('FLIGHT_PIPELINE_CHUNK_SIZE', 10000))
         total_ingested = 0
+        source_file_name = os.path.basename(CSV_FILE_PATH)
         
-        # Clear existing data (full refresh strategy)
-        # For incremental, you would use UPSERT based on a unique key
+        # Check if THIS SPECIFIC FILE was already ingested (by file name + hash)
+        last_hash = get_last_ingestion_hash(engine, source_file_name)
+        
+        if current_hash == last_hash and not force_reload:
+            logger.info(f"File {source_file_name} unchanged, skipping ingestion")
+            context['ti'].xcom_push(key='ingestion_skipped', value=True)
+            context['ti'].xcom_push(key='ingested_count', value=0)
+            return {'status': 'skipped', 'reason': 'file_unchanged', 'file_hash': current_hash}
+        
+        # Delete only records from THIS source file (if re-ingesting same file)
+        # This preserves data from OTHER CSV files
         with engine.begin() as conn:
-            conn.execute(text("TRUNCATE TABLE flight_staging"))
+            conn.execute(text("DELETE FROM flight_staging WHERE source_file = :source_file"), 
+                        {"source_file": source_file_name})
         
         for chunk_idx, chunk in enumerate(pd.read_csv(CSV_FILE_PATH, chunksize=chunk_size)):
             # Rename columns
@@ -122,13 +132,15 @@ def ingest_csv_to_mysql(**context):
             if schema_report.has_changes:
                 chunk = schema_handler.adapt_dataframe(chunk, schema_report)
             
-            # Add metadata columns
+            # Add metadata columns with source file tracking
+            chunk['source_file'] = source_file_name
+            chunk['file_hash'] = current_hash
             chunk['is_validated'] = False
             chunk['validation_errors'] = None
             chunk['ingestion_run_id'] = run_id
             chunk['ingested_at'] = datetime.now()
             
-            # Insert chunk
+            # Insert chunk (APPEND mode)
             chunk.to_sql('flight_staging', engine, if_exists='append', index=False)
             total_ingested += len(chunk)
             logger.info(f"Chunk {chunk_idx + 1}: Ingested {total_ingested} records so far")
@@ -136,7 +148,7 @@ def ingest_csv_to_mysql(**context):
         
         # Record Metadata & Lineage
      
-        record_ingestion_metadata(engine, current_hash, total_ingested, run_id)
+        record_ingestion_metadata(engine, current_hash, total_ingested, run_id, source_file_name)
         
         # Track lineage
         lineage_tracker = get_lineage_tracker(dag_id, run_id)
