@@ -497,10 +497,21 @@ docker-compose logs airflow-scheduler
 ### Database Connection Issues
 
 ```bash
-# Test MySQL connection
-docker exec flight-mysql mysql -u airflow -p -e "SHOW DATABASES;"
+# Connect to MySQL staging database (interactive)
+docker exec -it flight-mysql mysql -uroot -proot_password -D staging
 
-# Test PostgreSQL connection
+# Test MySQL connection (non-interactive)
+docker exec flight-mysql mysql -uroot -proot_password -e "SHOW DATABASES;"
+
+# Useful MySQL queries once connected:
+# SHOW TABLES;
+# SELECT COUNT(*) FROM flight_staging;
+# SELECT source_file, file_hash, COUNT(*) FROM flight_staging GROUP BY source_file, file_hash;
+
+# Connect to PostgreSQL analytics database (interactive)
+docker exec -it flight-postgres psql -U airflow -d analytics
+
+# Test PostgreSQL connection (non-interactive)
 docker exec flight-postgres psql -U airflow -d analytics -c "\dt"
 ```
 
