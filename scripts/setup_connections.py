@@ -9,7 +9,7 @@ from airflow import settings
 import os
 
 def create_connections():
-    """Create PostgreSQL connection for Airflow."""
+    # Create PostgreSQL and MySQL connections for Airflow.
     
     session = settings.Session()
     
@@ -24,21 +24,35 @@ def create_connections():
         port=int(os.getenv('POSTGRES_PORT', '5432'))
     )
     
-    # Delete existing connection if it exists
-    existing = session.query(Connection).filter(
-        Connection.conn_id == postgres_conn.conn_id
-    ).first()
-    if existing:
-        session.delete(existing)
+    # MySQL Staging Connection
+    mysql_conn = Connection(
+        conn_id='mysql_staging',
+        conn_type='mysql',
+        host=os.getenv('MYSQL_HOST', 'mysql'),
+        schema=os.getenv('MYSQL_DATABASE', 'staging'),
+        login=os.getenv('MYSQL_USER', 'airflow'),
+        password=os.getenv('MYSQL_PASSWORD', 'airflow_password'),
+        port=int(os.getenv('MYSQL_PORT', '3306'))
+    )
     
-    session.commit()
+    connections = [postgres_conn, mysql_conn]
     
-    # Add new connection
-    session.add(postgres_conn)
-    session.commit()
+    for conn in connections:
+        # Delete existing connection if it exists
+        existing = session.query(Connection).filter(
+            Connection.conn_id == conn.conn_id
+        ).first()
+        if existing:
+            session.delete(existing)
+        session.commit()
+        
+        # Add new connection
+        session.add(conn)
+        session.commit()
     
     print("Connections created successfully!")
     print(f"  - postgres_analytics: postgres://{postgres_conn.host}:{postgres_conn.port}/{postgres_conn.schema}")
+    print(f"  - mysql_staging: mysql://{mysql_conn.host}:{mysql_conn.port}/{mysql_conn.schema}")
 
 
 if __name__ == '__main__':

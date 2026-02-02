@@ -1,4 +1,3 @@
--- PostgreSQL Analytics Database Initialization
 -- Creates the analytics database and KPI tables
 
 -- Create analytics database (if not exists from docker-compose)

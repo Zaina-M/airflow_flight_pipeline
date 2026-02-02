@@ -1,4 +1,3 @@
--- MySQL Staging Database Initialization
 -- Creates the staging table for raw flight price data from CSV
 
 USE staging;
@@ -29,6 +28,10 @@ CREATE TABLE flight_staging (
     -- Validation flags
     is_validated BOOLEAN DEFAULT FALSE,
     validation_errors TEXT,
+    validated_at TIMESTAMP NULL,
+    -- Ingestion metadata
+    ingestion_run_id VARCHAR(255),
+    ingested_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );

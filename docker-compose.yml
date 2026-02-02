@@ -5,27 +5,34 @@ x-airflow-common: &airflow-common
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/airflow_metadata
     AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/airflow_metadata
     AIRFLOW__CELERY__BROKER_URL: redis://redis:6379/0
-    AIRFLOW__CORE__FERNET_KEY: "zTvhk2O0szF9X5GbH5SqDLq8I77q2E8O0p6s3M3WvAc="
+    # Security: Use environment variable for Fernet key
+    AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:-}
     AIRFLOW__CORE__LOAD_EXAMPLES: "false"
-    AIRFLOW__WEBSERVER__SECRET_KEY: "flight_price_pipeline_secret_key"
+    # Security: Use environment variable for secret key
+    AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_SECRET_KEY:-}
     AIRFLOW__API__AUTH_BACKENDS: "airflow.api.auth.backend.basic_auth"
-    # Additional pip packages to install at runtime
-    # _PIP_ADDITIONAL_REQUIREMENTS: "pandas==2.1.4 sqlalchemy==2.0.25 pymysql==1.1.0 psycopg2-binary==2.9.9 apache-airflow-providers-mysql==5.5.0 apache-airflow-providers-postgres==5.10.0"
-    # MySQL Connection
+    # MySQL Connection - credentials from environment
     MYSQL_HOST: mysql
     MYSQL_PORT: "3306"
     MYSQL_DATABASE: staging
-    MYSQL_USER: airflow
-    MYSQL_PASSWORD: airflow_password
-    # PostgreSQL Connection
+    MYSQL_USER: ${MYSQL_USER:-airflow}
+    MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    # PostgreSQL Connection - credentials from environment
     POSTGRES_HOST: postgres
     POSTGRES_PORT: "5432"
     POSTGRES_DB: analytics
-    POSTGRES_USER: airflow
-    POSTGRES_PASSWORD: airflow_password
-    # Airflow Connections
-    AIRFLOW_CONN_MYSQL_STAGING: "mysql://airflow:airflow_password@mysql:3306/staging"
-    AIRFLOW_CONN_POSTGRES_ANALYTICS: "postgres://airflow:airflow_password@postgres:5432/analytics"
+    POSTGRES_USER: ${POSTGRES_USER}
+    POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    # Airflow Connections - using environment variables
+    AIRFLOW_CONN_MYSQL_STAGING: "mysql://${MYSQL_USER:-airflow}:${MYSQL_PASSWORD}@mysql:3306/staging"
+    AIRFLOW_CONN_POSTGRES_ANALYTICS: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/analytics"
+    # Pipeline Configuration (can be overridden)
+    FLIGHT_PIPELINE_CHUNK_SIZE: ${FLIGHT_PIPELINE_CHUNK_SIZE:-10000}
+    FLIGHT_PIPELINE_PEAK_SEASONS: ${FLIGHT_PIPELINE_PEAK_SEASONS:-Eid,Hajj,Winter}
+    # Connection pool settings
+    DB_POOL_SIZE: ${DB_POOL_SIZE:-5}
+    DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-10}
+    DB_POOL_TIMEOUT: ${DB_POOL_TIMEOUT:-30}
   volumes:
     - ./dags:/opt/airflow/dags
     - ./logs:/opt/airflow/logs
@@ -44,10 +51,10 @@ services:
     image: mysql:8.0
     container_name: flight-mysql
     environment:
-      MYSQL_ROOT_PASSWORD: root_password
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: staging
-      MYSQL_USER: airflow
-      MYSQL_PASSWORD: airflow_password
+      MYSQL_USER: ${MYSQL_USER:-airflow}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
     volumes:
       - mysql-db-volume:/var/lib/mysql
       - ./scripts/init_mysql.sql:/docker-entrypoint-initdb.d/init_mysql.sql
@@ -71,7 +78,7 @@ services:
       - postgres-db-volume:/var/lib/postgresql/data
       - ./scripts/init_postgres.sql:/docker-entrypoint-initdb.d/init_postgres.sql
     healthcheck:
-      test: ["CMD", "pg_isready", "-U", "airflow", "-d", "airflow_metadata"]
+      test: ["CMD", "pg_isready", "-U", "${POSTGRES_USER}", "-d", "airflow_metadata"]
       interval: 10s
       retries: 5
       start_period: 5s
