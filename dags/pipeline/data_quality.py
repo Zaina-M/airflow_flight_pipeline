@@ -21,12 +21,12 @@ class ExpectationResult:
     
     def to_dict(self) -> Dict:
         return {
-            'expectation_type': self.expectation_type,
-            'column': self.column,
-            'success': bool(self.success),
-            'observed_value': self.observed_value,
-            'expected_value': self.expected_value,
-            'exception_info': self.exception_info
+            'expectation_type': self.expectation_type, #What rule was applied
+            'column': self.column, #which column was checked if any
+            'success': bool(self.success), #whether the expectation passed or failed
+            'observed_value': self.observed_value, #the actual value observed during validation
+            'expected_value': self.expected_value, #the value that was expected according to the rule
+            'exception_info': self.exception_info # any error messages if applicable
         }
 
 
@@ -34,9 +34,9 @@ class ExpectationResult:
 class ValidationResult:
     # Aggregated validation results.
     success: bool
-    evaluated_expectations: int
-    successful_expectations: int
-    failed_expectations: int
+    evaluated_expectations: int #how many expectations were checked
+    successful_expectations: int #how many expectations passed
+    failed_expectations: int #how many expectations failed
     results: List[ExpectationResult] = field(default_factory=list)
     run_time: Optional[datetime] = None
     
@@ -47,18 +47,18 @@ class ValidationResult:
             'successful_expectations': int(self.successful_expectations),
             'failed_expectations': int(self.failed_expectations),
             'run_time': self.run_time.isoformat() if self.run_time else None,
-            'results': [r.to_dict() for r in self.results]
+            'results': [r.to_dict() for r in self.results] #list of individual expectation results
         }
 
 
 class DataQualityValidator:
  
     
-    def __init__(self, df: pd.DataFrame, dataset_name: str = "dataset"):
+    def __init__(self, df: pd.DataFrame, dataset_name: str = "dataset"): #takes a pandas dataframe and an optional name
         self.df = df
         self.dataset_name = dataset_name
-        self.expectations: List[Callable] = []
-        self.results: List[ExpectationResult] = []
+        self.expectations: List[Callable] = [] # runs checks on the dataframe
+        self.results: List[ExpectationResult] = [] # stores results of each check
         
     def expect_column_to_exist(self, column: str) -> 'DataQualityValidator':
         # Expect a column to exist in the dataframe.
@@ -67,7 +67,7 @@ class DataQualityValidator:
             expectation_type='expect_column_to_exist',
             column=column,
             success=success,
-            observed_value=list(self.df.columns) if not success else column,
+            observed_value=list(self.df.columns) if not success else column,  #list all columns if missing
             expected_value=column
         ))
         return self
@@ -75,7 +75,7 @@ class DataQualityValidator:
     def expect_column_values_to_not_be_null(
         self, 
         column: str, 
-        mostly: float = 1.0
+        mostly: float = 1.0 # 100% by default should be non-null
     ) -> 'DataQualityValidator':
         # Expect column values to not be null (with optional threshold).
         if column not in self.df.columns:
@@ -152,7 +152,7 @@ class DataQualityValidator:
         value_set: List[Any],
         mostly: float = 1.0
     ) -> 'DataQualityValidator':
-        # Expect column values to be in a predefined set.
+        # Expect column values to be in a predefined set.used for airline names, classes, etc.
         if column not in self.df.columns:
             self.results.append(ExpectationResult(
                 expectation_type='expect_column_values_to_be_in_set',
@@ -215,7 +215,7 @@ class DataQualityValidator:
         regex: str,
         mostly: float = 1.0
     ) -> 'DataQualityValidator':
-        # Expect column values to match a regex pattern.
+        # Expect column values to match a regex pattern.used for code formats, IDs  checks etc.
         if column not in self.df.columns:
             self.results.append(ExpectationResult(
                 expectation_type='expect_column_values_to_match_regex',
@@ -244,7 +244,7 @@ class DataQualityValidator:
         min_value: int, 
         max_value: Optional[int] = None
     ) -> 'DataQualityValidator':
-        # Expect table row count to be within a range.
+        # Expect table row count to be within a range.ensures data was loaded and is not empty.
         row_count = len(self.df)
         
         success = row_count >= min_value
@@ -266,7 +266,7 @@ class DataQualityValidator:
         min_value: Optional[float] = None, 
         max_value: Optional[float] = None
     ) -> 'DataQualityValidator':
-        # Expect column mean to be within a range.
+        # Expect column mean to be within a range.catches extreme anomalies in numeric data.
         if column not in self.df.columns:
             self.results.append(ExpectationResult(
                 expectation_type='expect_column_mean_to_be_between',
@@ -295,7 +295,7 @@ class DataQualityValidator:
         return self
     
     def validate(self) -> ValidationResult:
-        # Run all expectations and return aggregated results.
+        # Run all expectations and return aggregated results.produces a summary of the validation.
         successful = sum(1 for r in self.results if r.success)
         failed = len(self.results) - successful
         
@@ -322,7 +322,7 @@ class DataQualityValidator:
 
 
 def create_flight_data_expectations(df: pd.DataFrame) -> DataQualityValidator:
-    # Create standard expectations for flight price data.
+    # Create standard expectations for flight price data.every pipeline run gets consistent validation.
    
     validator = DataQualityValidator(df, "flight_price_data")
     

@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 def compute_file_hash(file_path: str) -> str:
-    # Compute MD5 hash of file for change detection.
+    # Compute MD5 hash of file for change detection.pipeline skips ingestion if unchanged(idempotency).
     hash_md5 = hashlib.md5()
     with open(file_path, "rb") as f:
         for chunk in iter(lambda: f.read(4096), b""):
@@ -93,7 +93,7 @@ def ingest_csv_to_mysql(**context):
         sample_df = pd.read_csv(CSV_FILE_PATH, nrows=100)
         sample_df = sample_df.rename(columns=COLUMN_MAPPING)
         
-        schema_handler = SchemaEvolutionHandler()
+        schema_handler = SchemaEvolutionHandler() # compare against existing schema in staging table
         schema_report = schema_handler.detect_schema_changes(sample_df)
         
         if schema_report.has_changes:
@@ -105,7 +105,7 @@ def ingest_csv_to_mysql(**context):
         
       
         # Chunked Ingestion with APPEND Strategy (preserves data from other files)
-        chunk_size = int(os.environ.get('FLIGHT_PIPELINE_CHUNK_SIZE', 10000))
+        chunk_size = int(os.environ.get('FLIGHT_PIPELINE_CHUNK_SIZE', 10000))# avoids ram crashes on large files
         total_ingested = 0
         source_file_name = os.path.basename(CSV_FILE_PATH)
         
@@ -165,7 +165,7 @@ def ingest_csv_to_mysql(**context):
         duration = (datetime.now() - start_time).total_seconds()
         logger.info(f"Successfully ingested {total_ingested} records in {duration:.2f}s")
         
-        # Store metadata in XCom
+        # Store metadata in XCom(output airflow task communication)
         context['ti'].xcom_push(key='ingested_count', value=total_ingested)
         context['ti'].xcom_push(key='ingestion_skipped', value=False)
         context['ti'].xcom_push(key='file_hash', value=current_hash)

@@ -20,7 +20,7 @@ def save_validation_report(**context):
     postgres_engine = get_postgres_connection()
     
     # Get validation report from XCom
-    validation_json = context['ti'].xcom_pull(key='validation_report', task_ids='validate_data')
+    validation_json = context['ti'].xcom_pull(key='validation_report', task_ids='validate_data') # saves validation report from previous task
     
     if validation_json:
         validation_report = json.loads(validation_json)
@@ -105,7 +105,7 @@ def send_pipeline_status(**context):
     logger.info(f"Succeeded Tasks ({len(succeeded_tasks)}): {succeeded_tasks}")
     
     if failed_tasks:
-        logger.error(f"⚠️ FAILED Tasks ({len(failed_tasks)}): {failed_tasks}")
+        logger.error(f" FAILED Tasks ({len(failed_tasks)}): {failed_tasks}")
     if skipped_tasks:
         logger.warning(f"Skipped Tasks ({len(skipped_tasks)}): {skipped_tasks}")
     if upstream_failed_tasks:
@@ -131,9 +131,5 @@ def send_pipeline_status(**context):
     except Exception as e:
         logger.warning(f"Could not save pipeline status to database: {e}")
     
-    # Here you could add integrations for:
-    # - Email alerts: send_email(status_report)
-    # - Slack notifications: send_slack_message(status_report)
-    # - PagerDuty alerts for critical failures
     
     return status_report

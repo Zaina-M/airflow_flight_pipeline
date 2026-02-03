@@ -153,7 +153,7 @@ def compute_kpis(**context):
     duration = (datetime.now() - start_time).total_seconds()
     
     lineage_tracker = get_lineage_tracker(dag_id, run_id)
-    lineage_tracker.track_aggregation(
+    lineage_tracker.track_aggregation(   
         task_id='compute_kpis',
         source_name='flight_data_transformed',
         source_namespace='postgres.analytics',

@@ -55,10 +55,7 @@ class SchemaReport:
 
 class SchemaEvolutionHandler:
     
-    # Handles schema evolution detection and management.
-    # Detects new columns, removed columns, and type changes.
-    
-    
+     
     # Expected schema definition
     EXPECTED_SCHEMA = {
         'airline': 'object',
