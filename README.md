@@ -280,7 +280,7 @@ docker-compose ps
 
 ```bash
 # Wait for services to be healthy, then run:
-docker exec flight-airflow-worker python /opt/airflow/scripts/setup_connections.py
+docker exec flight-airflow-worker python /opt/airflow/Database/setup_connections.py
 ```
 
 ### 6. Access Airflow UI

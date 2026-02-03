@@ -38,7 +38,7 @@ x-airflow-common: &airflow-common
     - ./logs:/opt/airflow/logs
     - ./plugins:/opt/airflow/plugins
     - ./data:/opt/airflow/data
-    - ./scripts:/opt/airflow/scripts
+    - ./Database:/opt/airflow/Database
   user: "${AIRFLOW_UID:-50000}:0"
   depends_on: &airflow-common-depends-on
     redis:
@@ -57,7 +57,7 @@ services:
       MYSQL_PASSWORD: ${MYSQL_PASSWORD}
     volumes:
       - mysql-db-volume:/var/lib/mysql
-      - ./scripts/init_mysql.sql:/docker-entrypoint-initdb.d/init_mysql.sql
+      - ./Database/init_mysql.sql:/docker-entrypoint-initdb.d/init_mysql.sql
     ports:
       - "3307:3306"
     healthcheck:
@@ -76,7 +76,7 @@ services:
       POSTGRES_DB: airflow_metadata
     volumes:
       - postgres-db-volume:/var/lib/postgresql/data
-      - ./scripts/init_postgres.sql:/docker-entrypoint-initdb.d/init_postgres.sql
+      - ./Database/init_postgres.sql:/docker-entrypoint-initdb.d/init_postgres.sql
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "${POSTGRES_USER}", "-d", "airflow_metadata"]
       interval: 10s
