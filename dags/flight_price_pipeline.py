@@ -38,20 +38,19 @@ with DAG(
     catchup=False,
     tags=['flight', 'price', 'bangladesh', 'etl'],
     doc_md="""
-    ## Flight Price Data Pipeline
     
     This pipeline processes Bangladesh flight price data through the following stages:
     
-    1. **Ingestion**: Load CSV data into MySQL staging (idempotent, with hash-based change detection)
-    2. **Quality**: Validate data quality using the data quality framework
-    3. **Transform**: Clean and enrich data, load to PostgreSQL
-    4. **Analytics**: Compute KPIs using SQL pushdown
-    5. **Reporting**: Save validation and quality reports
+    1. Ingestion: Load CSV data into MySQL staging (idempotent, with hash-based change detection)
+    2. Quality: Validate data quality using the data quality framework
+    3. Transform: Clean and enrich data, load to PostgreSQL
+    4. Analytics: Compute KPIs using SQL pushdown
+    5. Reporting: Save validation and quality reports
     
-    ### Parameters
-    - `force_reload`: Set to `true` to force re-ingestion even if file unchanged
+     Parameters
+    force_reload: Set to `true` to force re-ingestion even if file unchanged
     
-    ### Lineage
+     Lineage
     All tasks track data lineage for auditing and debugging.
     """,
     # params={
@@ -67,7 +66,7 @@ with DAG(
             python_callable=ingest_csv_to_mysql,
             provide_context=True,
             doc_md="""
-            ### Ingest CSV to MySQL
+            Ingest CSV to MySQL
             - Loads raw CSV data into MySQL staging table
             - Supports chunked reading for memory efficiency
             - Implements idempotency via file hash comparison
@@ -85,7 +84,7 @@ with DAG(
             provide_context=True,
             trigger_rule=TriggerRule.ALL_DONE,  # Run even if upstream failed
             doc_md="""
-            ### Validate Data
+            Validate Data
             - Uses DataQualityValidator framework
             - Checks for nulls, negative values, type errors
             - Auto-corrects fixable issues
@@ -99,7 +98,7 @@ with DAG(
             provide_context=True,
             trigger_rule=TriggerRule.ALL_DONE,  # Run even if validation failed
             doc_md="""
-            ### Save Validation Report
+             Save Validation Report
             - Persists validation results to PostgreSQL
             - Creates audit trail for each pipeline run
             """
@@ -116,7 +115,7 @@ with DAG(
             python_callable=transform_data,
             provide_context=True,
             doc_md="""
-            ### Transform Data
+             Transform Data
             - Parses datetime fields
             - Adds peak season flags
             - Creates route column
@@ -133,7 +132,7 @@ with DAG(
             python_callable=compute_kpis,
             provide_context=True,
             doc_md="""
-            ### Compute KPIs
+             Compute KPIs
             Uses SQL pushdown for performance:
             - Average Fare by Airline
             - Seasonal Fare Variation
@@ -151,7 +150,7 @@ with DAG(
         provide_context=True,
         trigger_rule=TriggerRule.ALL_DONE,  # Always runs regardless of upstream status
         doc_md="""
-        ### Pipeline Status Report
+         Pipeline Status Report
         - Summarizes all task statuses
         - Alerts on any failures
         - Always runs (even if other tasks fail)
