@@ -68,7 +68,7 @@ with DAG(
             doc_md="""
             Ingest CSV to MySQL
             - Loads raw CSV data into MySQL staging table
-            - Supports chunked reading for memory efficiency
+            - Loads full dataset into memory (suitable for datasets under 1GB)
             - Implements idempotency via file hash comparison
             - Detects schema evolution
             """

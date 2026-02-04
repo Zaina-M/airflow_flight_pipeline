@@ -295,7 +295,6 @@ class TestConfiguration:
         # Test that default values are set
         config = PipelineConfig()
         
-        assert config.chunk_size > 0
         assert len(config.peak_seasons) > 0
         assert config.column_mapping is not None
     

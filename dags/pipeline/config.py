@@ -30,7 +30,6 @@ class PipelineConfig:
     DEFAULTS = {
         # Pipeline settings
         'csv_file_path': '/opt/airflow/data/raw/Flight_Price_Dataset_of_Bangladesh.csv',
-        'chunk_size': 10000,
         'max_retries': 3,
         'retry_delay_minutes': 5,
         
@@ -117,7 +116,6 @@ class PipelineConfig:
         # Load configuration from Airflow Variables.
         airflow_configs = {
             'csv_file_path': 'flight_pipeline_csv_path',
-            'chunk_size': 'flight_pipeline_chunk_size',
             'peak_seasons': 'flight_pipeline_peak_seasons',
             'null_threshold': 'flight_pipeline_null_threshold',
             'enable_schema_evolution': 'flight_pipeline_schema_evolution',
@@ -132,7 +130,7 @@ class PipelineConfig:
                     # Handle JSON values
                     if config_key in ('peak_seasons', 'kpi_tables'):
                         value = json.loads(value)
-                    elif config_key in ('chunk_size', 'batch_size', 'max_retries'):
+                    elif config_key in ('batch_size', 'max_retries'):
                         value = int(value)
                     elif config_key in ('null_threshold', 'negative_fare_threshold'):
                         value = float(value)
@@ -148,7 +146,6 @@ class PipelineConfig:
         # Load configuration from environment variables.
         env_configs = {
             'csv_file_path': 'FLIGHT_PIPELINE_CSV_PATH',
-            'chunk_size': 'FLIGHT_PIPELINE_CHUNK_SIZE',
             'peak_seasons': 'FLIGHT_PIPELINE_PEAK_SEASONS',
             'enable_schema_evolution': 'FLIGHT_PIPELINE_SCHEMA_EVOLUTION',
             'enable_lineage_tracking': 'FLIGHT_PIPELINE_LINEAGE_TRACKING',
@@ -163,7 +160,7 @@ class PipelineConfig:
                         value = json.loads(value)
                     except json.JSONDecodeError:
                         value = value.split(',')
-                elif config_key in ('chunk_size', 'batch_size'):
+                elif config_key in ('batch_size',):
                     value = int(value)
                 elif config_key.startswith('enable_'):
                     value = value.lower() in ('true', '1', 'yes')
@@ -204,10 +201,6 @@ class PipelineConfig:
     @property
     def csv_file_path(self) -> str:
         return self.get('csv_file_path')
-    
-    @property
-    def chunk_size(self) -> int:
-        return self.get_int('chunk_size', 10000)
     
     @property
     def peak_seasons(self) -> List[str]:

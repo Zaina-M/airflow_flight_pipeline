@@ -59,7 +59,7 @@ The `flight_price_pipeline` DAG consists of six primary tasks:
 ### Task 1: `ingest_csv_to_mysql`
 
 - **Goal**: Load raw data from the CSV file into a MySQL staging area.
-- **Logic**: Uses Pandas chunked reading (10,000 rows/chunk) for memory efficiency. Column names are mapped from CSV headers to database-friendly snake_case.
+- **Logic**: Loads the full dataset into memory using Pandas (suitable for datasets under 1GB). Column names are mapped from CSV headers to database-friendly snake_case.
 - **Append Strategy**: Instead of truncating all data, removes only rows from the same source file before inserting. This preserves data from multiple CSV files.
 - **Source Tracking**: Each row is tagged with `source_file` (filename) and `file_hash` (MD5 hash) for traceability.
 - **Idempotency**: Skips ingestion if the file hash matches the last ingestion for that specific source file.

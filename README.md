@@ -305,7 +305,7 @@ The pipeline processes flight price data through four TaskGroups:
 ### Ingestion TaskGroup
 
 - Loads CSV into MySQL staging table
-- Chunked reading (10,000 rows) for memory efficiency
+- Full dataset loading (suitable for datasets under 1GB with pandas)
 - Idempotent: skips if file unchanged (hash-based detection)
 - **Append Strategy**: Preserves data from multiple source files
 - Source file tracking: Each row tagged with `source_file` and `file_hash`
@@ -388,7 +388,6 @@ MYSQL_USER=airflow
 MYSQL_PASSWORD=your-secure-password
 
 # Pipeline Settings (Optional)
-FLIGHT_PIPELINE_CHUNK_SIZE=10000
 FLIGHT_PIPELINE_PEAK_SEASONS=Eid,Hajj,Winter
 
 # Connection Pool (Optional)
@@ -403,7 +402,6 @@ Optional configuration via Airflow UI (Admin > Variables):
 | Variable                           | Description                    |
 |------------------------------------|--------------------------------|
 | flight_pipeline_csv_path           | Path to CSV file               |
-| flight_pipeline_chunk_size         | Ingestion chunk size           |
 | flight_pipeline_peak_seasons       | JSON array of peak seasons     |
 | flight_pipeline_schema_evolution   | Enable schema detection (bool) |
 | flight_pipeline_lineage_tracking   | Enable lineage tracking (bool) |

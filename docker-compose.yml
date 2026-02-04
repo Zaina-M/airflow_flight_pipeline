@@ -27,7 +27,6 @@ x-airflow-common: &airflow-common
     AIRFLOW_CONN_MYSQL_STAGING: "mysql://${MYSQL_USER:-airflow}:${MYSQL_PASSWORD}@mysql:3306/staging"
     AIRFLOW_CONN_POSTGRES_ANALYTICS: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/analytics"
     # Pipeline Configuration (can be overridden)
-    FLIGHT_PIPELINE_CHUNK_SIZE: ${FLIGHT_PIPELINE_CHUNK_SIZE:-10000}
     FLIGHT_PIPELINE_PEAK_SEASONS: ${FLIGHT_PIPELINE_PEAK_SEASONS:-Eid,Hajj,Winter}
     # Connection pool settings
     DB_POOL_SIZE: ${DB_POOL_SIZE:-5}

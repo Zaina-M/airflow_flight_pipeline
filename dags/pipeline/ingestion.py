@@ -87,7 +87,7 @@ def ingest_csv_to_mysql(**context):
      
         # Schema Evolution Detection
       
-        # Read first chunk to check schema
+        # Read sample rows to check schema
         sample_df = pd.read_csv(CSV_FILE_PATH, nrows=100)
         sample_df = sample_df.rename(columns=COLUMN_MAPPING)
         
@@ -102,9 +102,7 @@ def ingest_csv_to_mysql(**context):
                 raise ValueError(f"Breaking schema changes detected: {schema_report.removed_columns}")
         
       
-        # Chunked Ingestion with APPEND Strategy (preserves data from other files)
-        chunk_size = int(os.environ.get('FLIGHT_PIPELINE_CHUNK_SIZE', 10000))# avoids ram crashes on large files
-        total_ingested = 0
+        # Full Dataset Ingestion (pandas handles this 13MB file easily in memory)
         source_file_name = os.path.basename(CSV_FILE_PATH)
         
         # Check if THIS SPECIFIC FILE was already ingested (by file name + hash)
@@ -122,26 +120,26 @@ def ingest_csv_to_mysql(**context):
             conn.execute(text("DELETE FROM flight_staging WHERE source_file = :source_file"), 
                         {"source_file": source_file_name})
         
-        for chunk_idx, chunk in enumerate(pd.read_csv(CSV_FILE_PATH, chunksize=chunk_size)):
-            # Rename columns
-            chunk = chunk.rename(columns=COLUMN_MAPPING)
-            
-            # Handle schema evolution
-            if schema_report.has_changes:
-                chunk = schema_handler.adapt_dataframe(chunk, schema_report)
-            
-            # Add metadata columns with source file tracking
-            chunk['source_file'] = source_file_name
-            chunk['file_hash'] = current_hash
-            chunk['is_validated'] = False
-            chunk['validation_errors'] = None
-            chunk['ingestion_run_id'] = run_id
-            chunk['ingested_at'] = datetime.now()
-            
-            # Insert chunk (APPEND mode)
-            chunk.to_sql('flight_staging', engine, if_exists='append', index=False)
-            total_ingested += len(chunk)
-            logger.info(f"Chunk {chunk_idx + 1}: Ingested {total_ingested} records so far")
+        # Load  dataset into memory)
+        df = pd.read_csv(CSV_FILE_PATH)
+        df = df.rename(columns=COLUMN_MAPPING)
+        
+        # Handle schema evolution
+        if schema_report.has_changes:
+            df = schema_handler.adapt_dataframe(df, schema_report)
+        
+        # Add metadata columns with source file tracking
+        df['source_file'] = source_file_name
+        df['file_hash'] = current_hash
+        df['is_validated'] = False
+        df['validation_errors'] = None
+        df['ingestion_run_id'] = run_id
+        df['ingested_at'] = datetime.now()
+        
+        # Insert full dataset
+        df.to_sql('flight_staging', engine, if_exists='append', index=False)
+        total_ingested = len(df)
+        logger.info(f"Ingested {total_ingested} records")
         
         
         # Record Metadata & Lineage
