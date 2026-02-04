@@ -47,8 +47,7 @@ with DAG(
     4. Analytics: Compute KPIs using SQL pushdown
     5. Reporting: Save validation and quality reports
     
-     Parameters
-    force_reload: Set to `true` to force re-ingestion even if file unchanged
+    
     
      Lineage
     All tasks track data lineage for auditing and debugging.
