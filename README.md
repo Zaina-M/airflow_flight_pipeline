@@ -436,7 +436,7 @@ flight-price-pipeline/
 |       |-- transformation.py       # Data transformation
 |       |-- validation.py           # Data validation
 |
-|-- scripts/
+|-- Database/
 |   |-- init_mysql.sql              # MySQL schema initialization
 |   |-- init_postgres.sql           # PostgreSQL schema initialization
 |   |-- setup_connections.py        # Airflow connection setup

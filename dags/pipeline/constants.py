@@ -14,9 +14,6 @@ except ImportError:
 
 
 
-# Configuration (from centralized config or defaults)
-
-
 # CSV file path - from config or environment
 CSV_FILE_PATH = os.environ.get(
     'FLIGHT_PIPELINE_CSV_PATH',

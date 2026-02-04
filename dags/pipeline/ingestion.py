@@ -6,14 +6,14 @@ from datetime import datetime
 from sqlalchemy import text
 from .constants import get_mysql_connection, CSV_FILE_PATH, COLUMN_MAPPING
 from .schema_evolution import SchemaEvolutionHandler, validate_schema_compatibility
-from .lineage import get_lineage_tracker, TransformationInfo
+from .lineage import get_lineage_tracker
 import pandas as pd
 
 logger = logging.getLogger(__name__)
 
 
 def compute_file_hash(file_path: str) -> str:
-    # Compute MD5 hash of file for change detection.pipeline skips ingestion if unchanged(idempotency).
+    # Compute MD5 hash of file for change detection,pipeline skips ingestion if unchanged(idempotency).
     hash_md5 = hashlib.md5()
     with open(file_path, "rb") as f:
         for chunk in iter(lambda: f.read(4096), b""):
@@ -67,8 +67,6 @@ def record_ingestion_metadata(engine, file_hash: str, record_count: int, run_id:
 def ingest_csv_to_mysql(**context):
     # Task 1: Load CSV data into MySQL staging table.
 
-    
-    
     logger.info("Starting CSV ingestion to MySQL...")
     start_time = datetime.now()
     run_id = context.get('run_id', 'unknown')
