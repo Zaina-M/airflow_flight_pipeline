@@ -306,6 +306,9 @@ The pipeline processes flight price data through four TaskGroups:
 
 - Loads CSV into MySQL staging table
 - Full dataset loading (suitable for datasets under 1GB with pandas)
+- **Corrupted Data Detection**: Validates required columns before ingestion
+  - Logs corrupted data alerts to `/opt/airflow/logs/corrupted_data/`
+  - Fails early with detailed error message if columns missing
 - Idempotent: skips if file unchanged (hash-based detection)
 - **Append Strategy**: Preserves data from multiple source files
 - Source file tracking: Each row tagged with `source_file` and `file_hash`
@@ -321,13 +324,17 @@ The pipeline processes flight price data through four TaskGroups:
 
 ### Transformation TaskGroup
 
+- **Smart Skipping**: Skips transformation if source data unchanged (saves compute)
 - Parses datetime fields
 - Adds computed columns: is_peak_season, route
 - Ensures Total Fare = Base Fare + Tax
-- Loads enriched data to PostgreSQL analytics table
+- **Upsert to PostgreSQL**: Inserts new records, preserves existing (no data loss)
+  - Uses composite key: airline + route + departure_datetime
+  - Only new flights are inserted, duplicates are skipped
 
 ### Analytics TaskGroup
 
+- **Smart Skipping**: Skips KPI recomputation if data unchanged (uses cached results)
 - Computes KPIs using SQL pushdown for performance
 - Four KPI tables populated in a single task
 
@@ -357,10 +364,10 @@ The pipeline processes flight price data through four TaskGroups:
 docker exec -it flight-postgres psql -U airflow -d analytics
 
 # View average fares
-SELECT * FROM kpi_avg_fare_by_airline ORDER BY avg_total_fare DESC;
+SELECT * FROM kpi_avg_fare_by_airline ORDER BY avg_total_fare DESC LIMIT 5;
 
 # View seasonal variation
-SELECT * FROM kpi_seasonal_fare_variation ORDER BY season_type, avg_total_fare DESC;
+SELECT * FROM kpi_seasonal_fare_variation ORDER BY season_type, avg_total_fare DESC LIMIT 5;
 
 # View top routes
 SELECT rank, route, booking_count, avg_fare 

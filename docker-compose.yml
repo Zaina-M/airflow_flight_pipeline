@@ -28,6 +28,7 @@ x-airflow-common: &airflow-common
     AIRFLOW_CONN_POSTGRES_ANALYTICS: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/analytics"
     # Pipeline Configuration (can be overridden)
     FLIGHT_PIPELINE_PEAK_SEASONS: ${FLIGHT_PIPELINE_PEAK_SEASONS:-Eid,Hajj,Winter}
+    CORRUPTED_DATA_LOG_PATH: /opt/airflow/logs/corrupted_data
     # Connection pool settings
     DB_POOL_SIZE: ${DB_POOL_SIZE:-5}
     DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-10}
