@@ -3,6 +3,7 @@ import json
 import logging
 from datetime import datetime
 from sqlalchemy import text
+from airflow.exceptions import AirflowSkipException
 from .constants import get_postgres_connection, PEAK_SEASONS
 from .lineage import get_lineage_tracker
 import pandas as pd
@@ -19,6 +20,15 @@ def compute_kpis(**context):
     start_time = datetime.now()
     run_id = context.get('run_id', 'unknown')
     dag_id = context.get('dag').dag_id if context.get('dag') else 'flight_price_pipeline'
+    
+    # Check if transformation was skipped - if so, skip KPI recomputation (data unchanged)
+    transformation_skipped = context['ti'].xcom_pull(key='transformation_skipped', task_ids='transformation.transform_data')
+    ingestion_skipped = context['ti'].xcom_pull(key='ingestion_skipped', task_ids='ingestion.ingest_csv_to_mysql')
+    
+    if transformation_skipped or ingestion_skipped:
+        logger.info("Data unchanged, skipping KPI recomputation to save compute. Using cached KPIs.")
+        context['ti'].xcom_push(key='kpi_skipped', value=True)
+        raise AirflowSkipException("Data unchanged, using cached KPIs")
     
     postgres_engine = get_postgres_connection()
 
