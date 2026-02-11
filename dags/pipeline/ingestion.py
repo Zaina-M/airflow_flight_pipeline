@@ -2,14 +2,45 @@
 import os
 import hashlib
 import logging
+import json
 from datetime import datetime
 from sqlalchemy import text
-from .constants import get_mysql_connection, CSV_FILE_PATH, COLUMN_MAPPING
+from airflow.exceptions import AirflowSkipException
+from .constants import get_mysql_connection, CSV_FILE_PATH, COLUMN_MAPPING, REQUIRED_COLUMNS
 from .schema_evolution import SchemaEvolutionHandler, validate_schema_compatibility
 from .lineage import get_lineage_tracker
 import pandas as pd
 
 logger = logging.getLogger(__name__)
+
+# Path for corrupted data logs
+CORRUPTED_DATA_LOG_PATH = os.environ.get('CORRUPTED_DATA_LOG_PATH', '/opt/airflow/logs/corrupted_data')
+
+
+def log_corrupted_data(file_name: str, error_type: str, details: dict, run_id: str):
+    """Log corrupted or invalid data to a dedicated error log file and alert."""
+    os.makedirs(CORRUPTED_DATA_LOG_PATH, exist_ok=True)
+    
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    log_file = os.path.join(CORRUPTED_DATA_LOG_PATH, f"corrupted_{timestamp}_{run_id}.json")
+    
+    error_record = {
+        'timestamp': datetime.now().isoformat(),
+        'run_id': run_id,
+        'file_name': file_name,
+        'error_type': error_type,
+        'details': details,
+        'alert_level': 'CRITICAL' if error_type == 'missing_required_columns' else 'WARNING'
+    }
+    
+    with open(log_file, 'w') as f:
+        json.dump(error_record, f, indent=2)
+    
+    # Log alert
+    logger.error(f"ALERT: Corrupted data detected - {error_type}: {details}")
+    logger.error(f"Error log saved to: {log_file}")
+    
+    return log_file
 
 
 def compute_file_hash(file_path: str) -> str:
@@ -89,6 +120,28 @@ def ingest_csv_to_mysql(**context):
       
         # Read sample rows to check schema
         sample_df = pd.read_csv(CSV_FILE_PATH, nrows=100)
+        
+        # Validate required columns BEFORE proceeding
+        missing_required = [col for col in REQUIRED_COLUMNS if col not in sample_df.columns]
+        if missing_required:
+            error_details = {
+                'missing_columns': missing_required,
+                'available_columns': list(sample_df.columns),
+                'file_path': CSV_FILE_PATH
+            }
+            log_file = log_corrupted_data(
+                file_name=os.path.basename(CSV_FILE_PATH),
+                error_type='missing_required_columns',
+                details=error_details,
+                run_id=run_id
+            )
+            context['ti'].xcom_push(key='corrupted_data_alert', value={
+                'error_type': 'missing_required_columns',
+                'log_file': log_file,
+                'missing_columns': missing_required
+            })
+            raise ValueError(f"CORRUPTED DATA: Missing required columns {missing_required}. See log: {log_file}")
+        
         sample_df = sample_df.rename(columns=COLUMN_MAPPING)
         
         schema_handler = SchemaEvolutionHandler() # compare against existing schema in staging table
@@ -108,11 +161,17 @@ def ingest_csv_to_mysql(**context):
         # Check if THIS SPECIFIC FILE was already ingested (by file name + hash)
         last_hash = get_last_ingestion_hash(engine, source_file_name)
         
+        # Debug logging
+        logger.info(f"Idempotency check: current_hash={current_hash}, last_hash={last_hash}, force_reload={force_reload}")
+        
         if current_hash == last_hash and not force_reload:
-            logger.info(f"File {source_file_name} unchanged, skipping ingestion")
+            logger.info(f"File {source_file_name} unchanged (hash: {current_hash}), skipping ingestion")
             context['ti'].xcom_push(key='ingestion_skipped', value=True)
             context['ti'].xcom_push(key='ingested_count', value=0)
-            return {'status': 'skipped', 'reason': 'file_unchanged', 'file_hash': current_hash}
+            context['ti'].xcom_push(key='file_hash', value=current_hash)
+            raise AirflowSkipException(f"File unchanged (hash: {current_hash}), skipping ingestion")
+        
+        logger.info(f"Proceeding with ingestion: file changed or force_reload=True")
         
         # Delete only records from THIS source file (if re-ingesting same file)
         # This preserves data from OTHER CSV files
