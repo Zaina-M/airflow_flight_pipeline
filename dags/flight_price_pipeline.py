@@ -21,7 +21,7 @@ default_args = {
     'depends_on_past': False,
     'email_on_failure': True,
     'email_on_retry': True,
-    'email': ['data-team@example.com'],  # Configure via Airflow Variables
+    'email': ['data@example.com'],  # Configure via Airflow Variables
     'retries': 3,
     'retry_delay': timedelta(minutes=5),
     'execution_timeout': timedelta(hours=1),
