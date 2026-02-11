@@ -131,6 +131,11 @@ CREATE INDEX idx_transformed_airline ON flight_data_transformed(airline);
 CREATE INDEX idx_transformed_route ON flight_data_transformed(source, destination);
 CREATE INDEX idx_transformed_seasonality ON flight_data_transformed(seasonality);
 CREATE INDEX idx_transformed_peak ON flight_data_transformed(is_peak_season);
+
+-- Unique constraint for upsert operations (prevents duplicate records)
+CREATE UNIQUE INDEX idx_transformed_unique_record 
+    ON flight_data_transformed(airline, route, departure_datetime);
+
 CREATE INDEX idx_staging_airline ON flight_staging(airline);
 CREATE INDEX idx_staging_validated ON flight_staging(is_validated);
 
