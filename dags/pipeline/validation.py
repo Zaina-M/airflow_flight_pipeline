@@ -3,6 +3,7 @@ import json
 import logging
 from datetime import datetime
 from sqlalchemy import text
+from airflow.exceptions import AirflowSkipException
 from .constants import get_mysql_connection, REQUIRED_COLUMNS, COLUMN_MAPPING
 from .data_quality import DataQualityValidator, create_flight_data_expectations
 from .lineage import get_lineage_tracker
@@ -20,11 +21,11 @@ def validate_data(**context):
     
     try:
         # Check if ingestion was skipped
-        ingestion_skipped = context['ti'].xcom_pull(key='ingestion_skipped', task_ids='ingest_csv_to_mysql')
+        ingestion_skipped = context['ti'].xcom_pull(key='ingestion_skipped', task_ids='ingestion.ingest_csv_to_mysql')
         if ingestion_skipped:
             logger.info("Ingestion was skipped, using existing validated data")
             context['ti'].xcom_push(key='validation_skipped', value=True)
-            return {'status': 'skipped', 'reason': 'ingestion_skipped'}
+            raise AirflowSkipException("Ingestion skipped, no new data to validate")
         
         engine = get_mysql_connection()
         
