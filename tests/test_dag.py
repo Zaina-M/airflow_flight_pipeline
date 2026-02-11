@@ -411,6 +411,8 @@ class TestKPIComputation:
         mock_connection.execute.return_value = mock_result
         
         mock_ti = MagicMock()
+        # Mock xcom_pull to return None (data was changed, so KPIs should compute)
+        mock_ti.xcom_pull.return_value = None
         
         result = compute_kpis(**{
             'ti': mock_ti,
