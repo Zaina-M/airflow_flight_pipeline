@@ -1,6 +1,7 @@
 import logging
 from datetime import datetime
 from sqlalchemy import text
+from airflow.exceptions import AirflowSkipException
 from .constants import get_postgres_connection, get_mysql_connection, PEAK_SEASONS
 from .lineage import get_lineage_tracker, TransformationInfo
 import pandas as pd
@@ -15,6 +16,19 @@ def transform_data(**context):
     start_time = datetime.now()
     run_id = context.get('run_id', 'unknown')
     dag_id = context.get('dag').dag_id if context.get('dag') else 'flight_price_pipeline'
+    
+    # Check if ingestion was skipped - if so, skip transformation (data unchanged)
+    ingestion_skipped = context['ti'].xcom_pull(key='ingestion_skipped', task_ids='ingestion.ingest_csv_to_mysql')
+    if ingestion_skipped:
+        logger.info("Ingestion was skipped (data unchanged), skipping transformation to save compute")
+        # Return cached result count from PostgreSQL
+        postgres_engine = get_postgres_connection()
+        with postgres_engine.connect() as conn:
+            result = conn.execute(text("SELECT COUNT(*) FROM flight_data_transformed"))
+            cached_count = result.scalar() or 0
+        context['ti'].xcom_push(key='transformation_skipped', value=True)
+        context['ti'].xcom_push(key='transformed_count', value=cached_count)
+        raise AirflowSkipException(f"Data unchanged, skipping transformation (cached: {cached_count} records)")
     
     mysql_engine = get_mysql_connection()
     postgres_engine = get_postgres_connection()
@@ -80,17 +94,55 @@ def transform_data(**context):
     ]
     
     df_analytics = df[analytics_columns].copy()
+    
+    # Add a unique identifier for upsert (composite key: airline + route + departure_datetime)
+    df_analytics['record_key'] = (
+        df_analytics['airline'].astype(str) + '_' + 
+        df_analytics['route'].astype(str) + '_' + 
+        df_analytics['departure_datetime'].astype(str)
+    )
     output_row_count = len(df_analytics)
     
-    # 6. Load to PostgreSQL
+    # 6. Upsert to PostgreSQL (insert new, update existing)
+    # First, create temp table, then merge
     with postgres_engine.begin() as conn:
-        conn.execute(text("TRUNCATE TABLE flight_data_transformed"))
+        # Create temp table
+        conn.execute(text("DROP TABLE IF EXISTS flight_data_temp"))
+        
+    df_analytics.to_sql('flight_data_temp', postgres_engine, if_exists='replace', index=False)
     
-    df_analytics.to_sql('flight_data_transformed', postgres_engine, 
-                        if_exists='append', index=False)
+    # Upsert: Insert new records, skip duplicates based on record_key
+    upsert_query = """
+        INSERT INTO flight_data_transformed (
+            airline, source, source_name, destination, destination_name,
+            departure_datetime, arrival_datetime, duration_hrs, stopovers,
+            aircraft_type, class, booking_source, base_fare_bdt,
+            tax_surcharge_bdt, total_fare_bdt, seasonality, days_before_departure,
+            is_peak_season, route
+        )
+        SELECT 
+            airline, source, source_name, destination, destination_name,
+            departure_datetime::timestamp, arrival_datetime::timestamp, 
+            duration_hrs::decimal, stopovers,
+            aircraft_type, class, booking_source, base_fare_bdt,
+            tax_surcharge_bdt, total_fare_bdt, seasonality, days_before_departure::int,
+            is_peak_season, route
+        FROM flight_data_temp t
+        WHERE NOT EXISTS (
+            SELECT 1 FROM flight_data_transformed f
+            WHERE f.airline = t.airline 
+              AND f.route = t.route 
+              AND f.departure_datetime = t.departure_datetime::timestamp
+        )
+    """
+    
+    with postgres_engine.begin() as conn:
+        result = conn.execute(text(upsert_query))
+        inserted_count = result.rowcount
+        conn.execute(text("DROP TABLE IF EXISTS flight_data_temp"))
     
     duration = (datetime.now() - start_time).total_seconds()
-    logger.info(f"Successfully loaded {output_row_count} transformed records to PostgreSQL in {duration:.2f}s")
+    logger.info(f"Successfully upserted {inserted_count} new records to PostgreSQL ({output_row_count} total processed) in {duration:.2f}s")
     
    
     # Track Lineage
